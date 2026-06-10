@@ -140,17 +140,119 @@ const pestsKnowledge = [
   }
 ];
 
+const getPlantStatus = (plant) => {
+  const now = new Date();
+  const nextWatering = new Date(plant.nextWatering);
+  const nextFertilizing = new Date(plant.nextFertilizing);
+  const daysToWater = Math.ceil((nextWatering - now) / (1000 * 60 * 60 * 24));
+  const daysToFertilize = Math.ceil((nextFertilizing - now) / (1000 * 60 * 60 * 24));
+  
+  if (plant.status === 'dead') return 'dead';
+  if (daysToWater < 0 || daysToFertilize < 0) return 'overdue';
+  if (daysToWater <= 3 || daysToFertilize <= 3) return 'warning';
+  return 'healthy';
+};
+
+const getDaysToWater = (plant) => {
+  const now = new Date();
+  const nextWatering = new Date(plant.nextWatering);
+  return Math.ceil((nextWatering - now) / (1000 * 60 * 60 * 24));
+};
+
 app.get('/api/plants', (req, res) => {
-  const { difficulty } = req.query;
+  const { 
+    difficulty, 
+    light, 
+    humidity, 
+    status, 
+    waterDaysMin, 
+    waterDaysMax,
+    sortBy,
+    sortOrder,
+    keyword
+  } = req.query;
+  
   let plants = readJSON('plants.json');
   
   plants = plants.map(plant => {
     const nextCare = calculateNextCare(plant);
-    return { ...plant, ...nextCare };
+    const plantWithNext = { ...plant, ...nextCare };
+    plantWithNext.plantStatus = getPlantStatus(plantWithNext);
+    plantWithNext.daysToWater = getDaysToWater(plantWithNext);
+    return plantWithNext;
   });
   
   if (difficulty) {
     plants = plants.filter(p => p.difficulty === difficulty);
+  }
+  
+  if (light) {
+    const lightList = light.split(',');
+    plants = plants.filter(p => lightList.includes(p.lightPreference));
+  }
+  
+  if (humidity) {
+    const humidityList = humidity.split(',');
+    plants = plants.filter(p => humidityList.includes(p.humidityPreference));
+  }
+  
+  if (status) {
+    const statusList = status.split(',');
+    plants = plants.filter(p => statusList.includes(p.plantStatus));
+  }
+  
+  if (waterDaysMin !== undefined && waterDaysMin !== '') {
+    const min = parseInt(waterDaysMin);
+    plants = plants.filter(p => p.daysToWater >= min);
+  }
+  
+  if (waterDaysMax !== undefined && waterDaysMax !== '') {
+    const max = parseInt(waterDaysMax);
+    plants = plants.filter(p => p.daysToWater <= max);
+  }
+  
+  if (keyword) {
+    const kw = keyword.toLowerCase();
+    plants = plants.filter(p => 
+      p.name.toLowerCase().includes(kw) || 
+      p.species.toLowerCase().includes(kw)
+    );
+  }
+  
+  if (sortBy) {
+    const order = sortOrder === 'desc' ? -1 : 1;
+    plants.sort((a, b) => {
+      let valA, valB;
+      switch (sortBy) {
+        case 'name':
+          valA = a.name.toLowerCase();
+          valB = b.name.toLowerCase();
+          break;
+        case 'createdAt':
+          valA = new Date(a.createdAt).getTime();
+          valB = new Date(b.createdAt).getTime();
+          break;
+        case 'nextWatering':
+          valA = new Date(a.nextWatering).getTime();
+          valB = new Date(b.nextWatering).getTime();
+          break;
+        case 'difficulty':
+          const diffOrder = { easy: 1, medium: 2, hard: 3 };
+          valA = diffOrder[a.difficulty] || 0;
+          valB = diffOrder[b.difficulty] || 0;
+          break;
+        case 'daysToWater':
+          valA = a.daysToWater;
+          valB = b.daysToWater;
+          break;
+        default:
+          valA = new Date(a.createdAt).getTime();
+          valB = new Date(b.createdAt).getTime();
+      }
+      if (valA < valB) return -1 * order;
+      if (valA > valB) return 1 * order;
+      return 0;
+    });
   }
   
   res.json(plants);

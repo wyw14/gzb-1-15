@@ -4,8 +4,14 @@ const { ElMessage, ElMessageBox, ElNotification } = ElementPlus;
 const API_BASE = '';
 
 const api = {
-  async getPlants(difficulty) {
-    const url = difficulty ? `${API_BASE}/api/plants?difficulty=${difficulty}` : `${API_BASE}/api/plants`;
+  async getPlants(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        query.append(key, value);
+      }
+    });
+    const url = query.toString() ? `${API_BASE}/api/plants?${query.toString()}` : `${API_BASE}/api/plants`;
     const res = await fetch(url);
     return res.json();
   },
@@ -515,13 +521,29 @@ const Dashboard = {
   `
 };
 
+const statusOptions = [
+  { value: 'healthy', label: '状态良好', type: 'success' },
+  { value: 'warning', label: '即将到期', type: 'warning' },
+  { value: 'overdue', label: '已过期', type: 'danger' },
+  { value: 'dead', label: '已死亡', type: 'info' }
+];
+
+const sortOptions = [
+  { value: 'createdAt_desc', label: '创建时间 最新优先' },
+  { value: 'createdAt_asc', label: '创建时间 最早优先' },
+  { value: 'name_asc', label: '名称 A-Z' },
+  { value: 'name_desc', label: '名称 Z-A' },
+  { value: 'daysToWater_asc', label: '下次浇水 最近优先' },
+  { value: 'daysToWater_desc', label: '下次浇水 最远优先' },
+  { value: 'difficulty_asc', label: '难度 简单到困难' },
+  { value: 'difficulty_desc', label: '难度 困难到简单' }
+];
+
 const PlantManagement = {
   emits: ['refresh-notifications'],
   setup(props, { emit }) {
     const plants = ref([]);
     const loading = ref(false);
-    const filterDifficulty = ref('');
-    const searchKeyword = ref('');
     const dialogVisible = ref(false);
     const photoDialogVisible = ref(false);
     const currentPlant = ref(null);
@@ -530,6 +552,28 @@ const PlantManagement = {
     const uploadFile = ref(null);
     const photoNote = ref('');
     const photoLoading = ref(false);
+    const advancedFilterVisible = ref(false);
+
+    const filters = reactive({
+      keyword: '',
+      difficulty: [],
+      light: [],
+      humidity: [],
+      status: [],
+      waterDaysMin: '',
+      waterDaysMax: '',
+      sortBy: 'createdAt',
+      sortOrder: 'desc'
+    });
+
+    const sortValue = computed({
+      get: () => `${filters.sortBy}_${filters.sortOrder}`,
+      set: (val) => {
+        const [sortBy, sortOrder] = val.split('_');
+        filters.sortBy = sortBy;
+        filters.sortOrder = sortOrder;
+      }
+    });
 
     const formData = reactive({
       name: '',
@@ -551,25 +595,44 @@ const PlantManagement = {
       fertilizingCycle: [{ required: true, message: '请输入施肥周期', trigger: 'blur' }]
     };
 
-    const filteredPlants = computed(() => {
-      let result = plants.value;
-      if (filterDifficulty.value) {
-        result = result.filter(p => p.difficulty === filterDifficulty.value);
-      }
-      if (searchKeyword.value) {
-        const kw = searchKeyword.value.toLowerCase();
-        result = result.filter(p => 
-          p.name.toLowerCase().includes(kw) || 
-          p.species.toLowerCase().includes(kw)
-        );
-      }
-      return result;
+    const activeFilterCount = computed(() => {
+      let count = 0;
+      if (filters.keyword) count++;
+      if (filters.difficulty.length > 0) count++;
+      if (filters.light.length > 0) count++;
+      if (filters.humidity.length > 0) count++;
+      if (filters.status.length > 0) count++;
+      if (filters.waterDaysMin !== '' || filters.waterDaysMax !== '') count++;
+      return count;
     });
 
     const loadPlants = async () => {
       try {
         loading.value = true;
-        plants.value = await api.getPlants();
+        const params = {
+          keyword: filters.keyword,
+          sortBy: filters.sortBy,
+          sortOrder: filters.sortOrder
+        };
+        if (filters.difficulty.length > 0) {
+          params.difficulty = filters.difficulty.join(',');
+        }
+        if (filters.light.length > 0) {
+          params.light = filters.light.join(',');
+        }
+        if (filters.humidity.length > 0) {
+          params.humidity = filters.humidity.join(',');
+        }
+        if (filters.status.length > 0) {
+          params.status = filters.status.join(',');
+        }
+        if (filters.waterDaysMin !== '') {
+          params.waterDaysMin = filters.waterDaysMin;
+        }
+        if (filters.waterDaysMax !== '') {
+          params.waterDaysMax = filters.waterDaysMax;
+        }
+        plants.value = await api.getPlants(params);
         emit('refresh-notifications');
       } catch (e) {
         ElMessage.error('加载植物列表失败');
@@ -577,6 +640,34 @@ const PlantManagement = {
         loading.value = false;
       }
     };
+
+    const resetFilters = () => {
+      filters.keyword = '';
+      filters.difficulty = [];
+      filters.light = [];
+      filters.humidity = [];
+      filters.status = [];
+      filters.waterDaysMin = '';
+      filters.waterDaysMax = '';
+      filters.sortBy = 'createdAt';
+      filters.sortOrder = 'desc';
+    };
+
+    let debounceTimer = null;
+    const debouncedLoadPlants = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadPlants();
+      }, 300);
+    };
+
+    watch(
+      () => [filters.keyword, filters.difficulty, filters.light, filters.humidity, filters.status, filters.waterDaysMin, filters.waterDaysMax, filters.sortBy, filters.sortOrder],
+      () => {
+        debouncedLoadPlants();
+      },
+      { deep: true }
+    );
 
     const openAddDialog = () => {
       isEdit.value = false;
@@ -698,7 +789,7 @@ const PlantManagement = {
     };
 
     const getStatusText = (status) => {
-      const map = { healthy: '状态良好', warning: '即将到期', overdue: '已过期' };
+      const map = { healthy: '状态良好', warning: '即将到期', overdue: '已过期', dead: '已死亡' };
       return map[status] || status;
     };
 
@@ -773,22 +864,25 @@ const PlantManagement = {
     return {
       plants,
       loading,
-      filterDifficulty,
-      searchKeyword,
       dialogVisible,
       photoDialogVisible,
       currentPlant,
       formData,
       rules,
       isEdit,
-      filteredPlants,
       plantPhotos,
       uploadFile,
       photoNote,
       photoLoading,
+      filters,
+      advancedFilterVisible,
+      sortValue,
+      activeFilterCount,
       difficultyOptions,
       lightOptions,
       humidityOptions,
+      statusOptions,
+      sortOptions,
       commonPlants,
       openAddDialog,
       openEditDialog,
@@ -806,7 +900,8 @@ const PlantManagement = {
       openPhotoDialog,
       handlePhotoUpload,
       handlePhotoDelete,
-      handleFileChange
+      handleFileChange,
+      resetFilters
     };
   },
   template: `
@@ -822,32 +917,106 @@ const PlantManagement = {
 
       <div class="filter-bar">
         <el-input
-          v-model="searchKeyword"
+          v-model="filters.keyword"
           placeholder="搜索植物名称或品种"
           clearable
           style="width: 250px;"
           :prefix-icon="Search"
         />
-        <el-select v-model="filterDifficulty" placeholder="按难度筛选" clearable style="width: 150px;">
-          <el-option v-for="opt in difficultyOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+        <el-select v-model="sortValue" placeholder="排序方式" style="width: 200px;">
+          <el-option v-for="opt in sortOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
         </el-select>
-        <span style="color: #666; margin-left: auto;">共 {{ filteredPlants.length }} 株植物</span>
+        <el-button @click="advancedFilterVisible = !advancedFilterVisible" :type="activeFilterCount > 0 ? 'primary' : 'default'">
+          <el-icon><Filter /></el-icon> 高级筛选
+          <el-badge v-if="activeFilterCount > 0" :value="activeFilterCount" class="filter-badge" />
+        </el-button>
+        <el-button v-if="activeFilterCount > 0" text @click="resetFilters">重置筛选</el-button>
+        <span style="color: #666; margin-left: auto;">共 {{ plants.length }} 株植物</span>
+      </div>
+
+      <div v-show="advancedFilterVisible" class="advanced-filter-panel">
+        <el-row :gutter="20">
+          <el-col :span="6">
+            <div class="filter-group">
+              <div class="filter-group-title">养护难度</div>
+              <el-checkbox-group v-model="filters.difficulty">
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <el-checkbox v-for="opt in difficultyOptions" :key="opt.value" :label="opt.value">
+                    {{ opt.label }}
+                  </el-checkbox>
+                </div>
+              </el-checkbox-group>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="filter-group">
+              <div class="filter-group-title">光照偏好</div>
+              <el-checkbox-group v-model="filters.light">
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <el-checkbox v-for="opt in lightOptions" :key="opt.value" :label="opt.value">
+                    {{ opt.icon }} {{ opt.label }}
+                  </el-checkbox>
+                </div>
+              </el-checkbox-group>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="filter-group">
+              <div class="filter-group-title">湿度偏好</div>
+              <el-checkbox-group v-model="filters.humidity">
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <el-checkbox v-for="opt in humidityOptions" :key="opt.value" :label="opt.value">
+                    {{ opt.icon }} {{ opt.label }}
+                  </el-checkbox>
+                </div>
+              </el-checkbox-group>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="filter-group">
+              <div class="filter-group-title">植物状态</div>
+              <el-checkbox-group v-model="filters.status">
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <el-checkbox v-for="opt in statusOptions" :key="opt.value" :label="opt.value">
+                    {{ opt.label }}
+                  </el-checkbox>
+                </div>
+              </el-checkbox-group>
+            </div>
+          </el-col>
+        </el-row>
+        <el-row :gutter="20" style="margin-top: 16px;">
+          <el-col :span="12">
+            <div class="filter-group">
+              <div class="filter-group-title">下次浇水天数</div>
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <el-input-number v-model="filters.waterDaysMin" :min="-30" :max="90" placeholder="最小天数" style="width: 120px;" />
+                <span style="color: #999;">至</span>
+                <el-input-number v-model="filters.waterDaysMax" :min="-30" :max="90" placeholder="最大天数" style="width: 120px;" />
+                <span style="color: #999; font-size: 12px;">天（负数表示已过期）</span>
+              </div>
+            </div>
+          </el-col>
+        </el-row>
       </div>
 
       <div v-loading="loading">
-        <div v-if="filteredPlants.length === 0" class="empty-state">
+        <div v-if="plants.length === 0" class="empty-state">
           <div class="empty-state-icon">🌱</div>
-          <div class="empty-state-text">暂无植物，点击上方按钮添加第一株植物吧</div>
-          <el-button type="primary" @click="openAddDialog">立即添加</el-button>
+          <div class="empty-state-text">
+            {{ activeFilterCount > 0 ? '没有符合筛选条件的植物' : '暂无植物，点击上方按钮添加第一株植物吧' }}
+          </div>
+          <el-button v-if="activeFilterCount === 0" type="primary" @click="openAddDialog">立即添加</el-button>
+          <el-button v-else @click="resetFilters">重置筛选</el-button>
         </div>
         <el-row v-else :gutter="20">
-          <el-col v-for="plant in filteredPlants" :key="plant.id" :xs="24" :sm="12" :md="8" :lg="6" style="margin-bottom: 20px;">
+          <el-col v-for="plant in plants" :key="plant.id" :xs="24" :sm="12" :md="8" :lg="6" style="margin-bottom: 20px;">
             <div class="plant-card">
               <div class="plant-card-image">
                 <img v-if="plantPhotos.find(p => p.plantId === plant.id)" :src="plantPhotos.find(p => p.plantId === plant.id)?.url" alt="" />
                 <span v-else>🪴</span>
-                <span class="plant-card-status" :class="getPlantStatus(plant)">
-                  {{ getStatusText(getPlantStatus(plant)) }}
+                <span class="plant-card-status" :class="plant.plantStatus">
+                  {{ getStatusText(plant.plantStatus) }}
                 </span>
               </div>
               <div class="plant-card-body">
