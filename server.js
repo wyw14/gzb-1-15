@@ -169,7 +169,9 @@ app.get('/api/plants', (req, res) => {
     waterDaysMax,
     sortBy,
     sortOrder,
-    keyword
+    keyword,
+    createdAtStart,
+    createdAtEnd
   } = req.query;
   
   let plants = readJSON('plants.json');
@@ -183,7 +185,8 @@ app.get('/api/plants', (req, res) => {
   });
   
   if (difficulty) {
-    plants = plants.filter(p => p.difficulty === difficulty);
+    const diffList = difficulty.split(',');
+    plants = plants.filter(p => diffList.includes(p.difficulty));
   }
   
   if (light) {
@@ -209,6 +212,17 @@ app.get('/api/plants', (req, res) => {
   if (waterDaysMax !== undefined && waterDaysMax !== '') {
     const max = parseInt(waterDaysMax);
     plants = plants.filter(p => p.daysToWater <= max);
+  }
+  
+  if (createdAtStart) {
+    const start = new Date(createdAtStart).getTime();
+    plants = plants.filter(p => new Date(p.createdAt).getTime() >= start);
+  }
+  
+  if (createdAtEnd) {
+    const end = new Date(createdAtEnd);
+    end.setHours(23, 59, 59, 999);
+    plants = plants.filter(p => new Date(p.createdAt).getTime() <= end.getTime());
   }
   
   if (keyword) {

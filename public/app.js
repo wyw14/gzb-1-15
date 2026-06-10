@@ -560,8 +560,10 @@ const PlantManagement = {
       light: [],
       humidity: [],
       status: [],
-      waterDaysMin: '',
-      waterDaysMax: '',
+      waterDaysMin: null,
+      waterDaysMax: null,
+      createdAtStart: '',
+      createdAtEnd: '',
       sortBy: 'createdAt',
       sortOrder: 'desc'
     });
@@ -602,7 +604,8 @@ const PlantManagement = {
       if (filters.light.length > 0) count++;
       if (filters.humidity.length > 0) count++;
       if (filters.status.length > 0) count++;
-      if (filters.waterDaysMin !== '' || filters.waterDaysMax !== '') count++;
+      if (filters.waterDaysMin !== null || filters.waterDaysMax !== null) count++;
+      if (filters.createdAtStart || filters.createdAtEnd) count++;
       return count;
     });
 
@@ -626,11 +629,17 @@ const PlantManagement = {
         if (filters.status.length > 0) {
           params.status = filters.status.join(',');
         }
-        if (filters.waterDaysMin !== '') {
+        if (filters.waterDaysMin !== null) {
           params.waterDaysMin = filters.waterDaysMin;
         }
-        if (filters.waterDaysMax !== '') {
+        if (filters.waterDaysMax !== null) {
           params.waterDaysMax = filters.waterDaysMax;
+        }
+        if (filters.createdAtStart) {
+          params.createdAtStart = filters.createdAtStart;
+        }
+        if (filters.createdAtEnd) {
+          params.createdAtEnd = filters.createdAtEnd;
         }
         plants.value = await api.getPlants(params);
         emit('refresh-notifications');
@@ -647,8 +656,10 @@ const PlantManagement = {
       filters.light = [];
       filters.humidity = [];
       filters.status = [];
-      filters.waterDaysMin = '';
-      filters.waterDaysMax = '';
+      filters.waterDaysMin = null;
+      filters.waterDaysMax = null;
+      filters.createdAtStart = '';
+      filters.createdAtEnd = '';
       filters.sortBy = 'createdAt';
       filters.sortOrder = 'desc';
     };
@@ -662,7 +673,7 @@ const PlantManagement = {
     };
 
     watch(
-      () => [filters.keyword, filters.difficulty, filters.light, filters.humidity, filters.status, filters.waterDaysMin, filters.waterDaysMax, filters.sortBy, filters.sortOrder],
+      () => [filters.keyword, filters.difficulty, filters.light, filters.humidity, filters.status, filters.waterDaysMin, filters.waterDaysMax, filters.createdAtStart, filters.createdAtEnd, filters.sortBy, filters.sortOrder],
       () => {
         debouncedLoadPlants();
       },
@@ -990,10 +1001,20 @@ const PlantManagement = {
             <div class="filter-group">
               <div class="filter-group-title">下次浇水天数</div>
               <div style="display: flex; align-items: center; gap: 12px;">
-                <el-input-number v-model="filters.waterDaysMin" :min="-30" :max="90" placeholder="最小天数" style="width: 120px;" />
+                <el-input-number v-model="filters.waterDaysMin" :min="-30" :max="90" :controls="false" placeholder="最小天数" style="width: 120px;" />
                 <span style="color: #999;">至</span>
-                <el-input-number v-model="filters.waterDaysMax" :min="-30" :max="90" placeholder="最大天数" style="width: 120px;" />
+                <el-input-number v-model="filters.waterDaysMax" :min="-30" :max="90" :controls="false" placeholder="最大天数" style="width: 120px;" />
                 <span style="color: #999; font-size: 12px;">天（负数表示已过期）</span>
+              </div>
+            </div>
+          </el-col>
+          <el-col :span="12">
+            <div class="filter-group">
+              <div class="filter-group-title">创建日期范围</div>
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <el-date-picker v-model="filters.createdAtStart" type="date" placeholder="开始日期" style="width: 160px;" />
+                <span style="color: #999;">至</span>
+                <el-date-picker v-model="filters.createdAtEnd" type="date" placeholder="结束日期" style="width: 160px;" />
               </div>
             </div>
           </el-col>
